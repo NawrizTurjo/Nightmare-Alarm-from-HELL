@@ -1,0 +1,25 @@
+{
+  "HOLD_SEC": 2.0,
+  "HOLD_CONFIRM_SEC": 0.8,
+  "CONF_THRESH": 0.85,
+  "GLITCH_P": 0.0,
+  "SWIPE_MIN_DIST_PIX": 40,
+  "PERSIST_FRAMES": 3,
+  "EWMA_ALPHA": 0.6,
+  "HAND_LOST_TIMEOUT": 5,
+  "MODIFIER_WINDOW": 1.2,
+  "FPS_TARGET": 15,
+  "MEDIAPIPE_MAX_HANDS": 2,
+  "MEDIAPIPE_DETECTION_CONF": 0.7,
+  "MEDIAPIPE_TRACKING_CONF": 0.6,
+  "UI_JITTER_INTERVAL_MS": 600,
+  "UI_JITTER_RANGE_PX": 5,
+  "UI_COLOR_CHANGE_MIN_SEC": 7,
+  "UI_COLOR_CHANGE_MAX_SEC": 12,
+  "WORST_UI_FEATURES": {
+    "color_chaos": false,
+    "text_rotation": false,
+    "label_swap": false,
+    "fake_success": false
+  }
+}
