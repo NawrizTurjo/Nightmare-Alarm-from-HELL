@@ -6,8 +6,10 @@ For the Worst UI Competition.
 """
 
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, WebRtcMode
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, RTCConfiguration
 import os
+import aiohttp
+import asyncio
 
 # Debug dependencies
 try:
@@ -180,27 +182,48 @@ class AlarmAudioProcessor(AudioProcessorBase):
 # WebRTC streamer
 try:
     # WebRTC streamer
-    # Fixed TURN Config (Hardcoded for stability)
-    rtc_config = {
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302"]}, # Google STUN
-            {
-                "urls": ["turn:global.relay.metered.ca:80"], # TURN UDP
-                "username": "1c618a423b0c3b3a484962ea",
-                "credential": "Jad+W2yByVGB/KJf",
-            },
-            {
-                "urls": ["turn:global.relay.metered.ca:80?transport=tcp"], # TURN TCP
-                "username": "1c618a423b0c3b3a484962ea",
-                "credential": "Jad+W2yByVGB/KJf",
-            },
-            {
-                "urls": ["turn:global.relay.metered.ca:443"], # TURN SSL
-                "username": "1c618a423b0c3b3a484962ea",
-                "credential": "Jad+W2yByVGB/KJf",
-            }
-        ]
-    }
+    # Async function to fetch fresh TURN credentials
+    async def get_metered_ice_servers():
+        api_key = st.secrets.get("metered_api_key")
+        if not api_key:
+            st.warning("Metered API key not found in secrets, using default STUN.")
+            return None
+
+        url = f"https://streamlit-webrtc-alarm-hell.metered.live/api/v1/turn/credentials?apiKey={api_key}"
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        st.error(f"Failed to fetch TURN creds: {resp.status} - {error_text}")
+                        return None
+                    data = await resp.json()
+                    return data  # This is already a list of iceServers dicts
+        except Exception as e:
+            st.error(f"Error fetching Metered TURN: {e}")
+            return None
+
+    # Cache it per session or app run (fetches once on load)
+    if "ice_servers" not in st.session_state:
+        # Run async fetch in sync context
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        ice_servers_list = loop.run_until_complete(get_metered_ice_servers())
+        st.session_state.ice_servers = ice_servers_list or []
+
+    ice_servers = st.session_state.ice_servers
+
+    if not ice_servers:
+        # Fallback to public STUN if fetch failed
+        print("falls back")
+        ice_servers = [{"urls": ["stun:stun.l.google.com:19302"]}]
+
+    rtc_config = RTCConfiguration(iceServers=ice_servers)
         
     ctx = webrtc_streamer(
         key="alarm-processor",
