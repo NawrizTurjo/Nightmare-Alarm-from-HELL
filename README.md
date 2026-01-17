@@ -25,26 +25,24 @@ Open `http://localhost:8501` and allow camera access.
 
 ## How to Set an Alarm
 
-| Digit | Gesture                   |
-| ----- | ------------------------- |
-| 0     | Fist (no fingers)         |
-| 1-5   | Hold up that many fingers |
-| 6     | 5 fingers + swipe UP      |
-| 7     | 5 fingers + swipe RIGHT   |
-| 8     | 5 fingers + swipe LEFT    |
-| 9     | 5 fingers + swipe DOWN    |
+| Digit | Gesture                                 |
+| ----- | --------------------------------------- |
+| 0     | Fist (no fingers)                       |
+| 1-5   | Hold up that many fingers               |
+| 6-9   | **Hold 5 fingers > 3s** (Roulette Mode) |
 
 **Hold each gesture for 2 seconds** until the loading bar fills.
 
 To **confirm**: Thumbs up 👍  
-To **stop alarm**: Two open hands 🙌
+To **stop alarm**: **Follow the on-screen challenge!**  
+(It requires random gestures: one hand, two hands, specific fingers, etc.)
 
 ## Tech Stack
 
 - **Streamlit** + **streamlit-webrtc** — Real-time web video
 - **MediaPipe Hands** — Hand landmark detection
 - **OpenCV** — Frame processing and UI overlays
-- **APScheduler** — Alarm scheduling
+- **Threading** — Non-blocking alarm scheduling
 
 ## Docker
 

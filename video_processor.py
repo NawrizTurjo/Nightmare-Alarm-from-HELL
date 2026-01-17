@@ -22,7 +22,10 @@ from enum import Enum, auto
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Dict
 from pathlib import Path
+from pathlib import Path
 import os
+import winsound
+import dev_state
 
 # MediaPipe imports - handle different versions
 import mediapipe as mp
@@ -112,6 +115,8 @@ class GestureResult:
     finger_count: int = 0
     confidence: float = 0.0
     is_stable: bool = False
+    hand_count: int = 1
+    hand_counts: Optional[List[int]] = None # List of finger counts for all hands found
 
 
 @dataclass
@@ -184,10 +189,10 @@ class AlarmProcessor(VideoProcessorBase):
         self.gesture_stable_count: int = 0
         self.ewma_finger_count: float = 0.0
         
-        # Swipe detection
-        self.centroid_history: List[Tuple[float, float]] = []
-        self.open_palm_start: Optional[float] = None
-        self.pending_modifier: bool = False
+        # Hold interaction state
+        self.five_finger_start_time: Optional[float] = None
+        self.roulette_last_change: float = 0.0
+        self.current_roulette_digit: Optional[int] = None
         
         # Hand tracking
         self.last_hand_seen: float = time.time()
@@ -211,6 +216,9 @@ class AlarmProcessor(VideoProcessorBase):
         )
         self.fake_success_message: Optional[str] = None
         self.fake_success_start: float = 0.0
+        
+        # Alarm stop challenge
+        self.stop_challenge: Optional[dict] = None
         
         # Performance tracking
         self.frame_times: List[float] = []
@@ -317,88 +325,47 @@ class AlarmProcessor(VideoProcessorBase):
         
         return sum(extended)
     
-    def detect_swipe(self) -> Optional[GestureType]:
-        """
-        Detect swipe gestures from centroid history.
-        
-        Returns:
-            GestureType: SWIPE_UP/DOWN/LEFT/RIGHT or None
-        """
-        if len(self.centroid_history) < 6:
-            return None
-        
-        # Get first and last centroids
-        start = self.centroid_history[0]
-        end = self.centroid_history[-1]
-        
-        dx = end[0] - start[0]
-        dy = end[1] - start[1]
-        
-        distance = np.sqrt(dx**2 + dy**2)
-        
-        if distance < CONFIG.get("SWIPE_MIN_DIST_PIX", 70):
-            return None
-        
-        # Determine direction based on angle
-        angle = np.arctan2(dy, dx) * 180 / np.pi
-        
-        if -45 <= angle < 45:
-            return GestureType.SWIPE_RIGHT
-        elif 45 <= angle < 135:
-            return GestureType.SWIPE_DOWN  # Note: Y increases downward
-        elif -135 <= angle < -45:
-            return GestureType.SWIPE_UP
-        else:
-            return GestureType.SWIPE_LEFT
+
     
+    # def detect_thumbs_up(self, hand_landmarks, handedness: str) -> Tuple[bool, float]:
+    #     """
     def detect_thumbs_up(self, hand_landmarks, handedness: str) -> Tuple[bool, float]:
         """
-        Detect thumbs-up gesture.
-        
-        Returns:
-            Tuple[bool, float]: (is_thumbs_up, confidence)
+        Detect thumbs-up gesture using relative height.
+        Key Heuristic: Thumb tip should be the highest point (lowest Y) on the hand.
         """
         if hand_landmarks is None:
             return False, 0.0
         
         landmarks = hand_landmarks.landmark
         
-        # Check if thumb is up (tip above index MCP)
         thumb_tip = landmarks[4]
+        index_tip = landmarks[8]
+        middle_tip = landmarks[12]
+        ring_tip = landmarks[16]
+        pinky_tip = landmarks[20]
+        
         index_mcp = landmarks[5]
         
-        thumb_above = thumb_tip.y < index_mcp.y
+        # 1. Thumb tip must be above (lower Y) the index knuckle (MCP)
+        thumb_above_knuckle = thumb_tip.y < index_mcp.y
         
-        # Check if other fingers are folded
-        finger_tips = [8, 12, 16, 20]
-        finger_pips = [6, 10, 14, 18]
+        # 2. Thumb tip should be the highest tip (lowest Y value)
+        # We give a small margin of error (0.02)
+        is_highest = (
+            thumb_tip.y < (index_tip.y - 0.02) and
+            thumb_tip.y < (middle_tip.y - 0.02) and
+            thumb_tip.y < (ring_tip.y - 0.02) and
+            thumb_tip.y < (pinky_tip.y - 0.02)
+        )
         
-        folded_count = 0
-        for tip_idx, pip_idx in zip(finger_tips, finger_pips):
-            if landmarks[tip_idx].y > landmarks[pip_idx].y:
-                folded_count += 1
+        # 3. Orientation check: Thumb IP (3) should be below Thumb Tip (4)
+        thumb_ip = landmarks[3]
+        is_upright = thumb_tip.y < thumb_ip.y
         
-        is_thumbs_up = thumb_above and folded_count >= 3
-        confidence = (folded_count / 4) * (1.0 if thumb_above else 0.5)
+        is_thumbs_up = thumb_above_knuckle and is_highest and is_upright
         
-        return is_thumbs_up, confidence
-    
-    def detect_fist(self, hand_landmarks) -> bool:
-        """Detect closed fist (all fingers folded)"""
-        if hand_landmarks is None:
-            return False
-        
-        landmarks = hand_landmarks.landmark
-        
-        # Check all finger tips below their PIPs
-        finger_tips = [8, 12, 16, 20]
-        finger_pips = [6, 10, 14, 18]
-        
-        for tip_idx, pip_idx in zip(finger_tips, finger_pips):
-            if landmarks[tip_idx].y < landmarks[pip_idx].y:
-                return False
-        
-        return True
+        return is_thumbs_up, 1.0 if is_thumbs_up else 0.0
     
     def detect_two_hands_open(self, results) -> bool:
         """Detect two hands both with open palms"""
@@ -433,12 +400,15 @@ class AlarmProcessor(VideoProcessorBase):
         Returns:
             GestureResult: Detected gesture with confidence
         """
+        current_time = time.time()
+        
         # Check for two hands open (for alarm stopping)
         if self.detect_two_hands_open(results):
             return GestureResult(
                 gesture_type=GestureType.TWO_HANDS_OPEN,
                 confidence=0.9,
-                is_stable=True
+                is_stable=True,
+                hand_count=2
             )
         
         # Process single hand
@@ -454,11 +424,26 @@ class AlarmProcessor(VideoProcessorBase):
         if results.multi_handedness:
             handedness = results.multi_handedness[0].classification[0].label
         
-        # Update centroid history for swipe detection
-        wrist = hand_landmarks.landmark[0]
-        self.centroid_history.append((wrist.x * 640, wrist.y * 480))  # Approximate pixel coords
-        if len(self.centroid_history) > 10:
-            self.centroid_history.pop(0)
+        # Check for thumbs up gesture (especially important for CONFIRM state)
+        is_thumbs_up, thumbs_conf = self.detect_thumbs_up(hand_landmarks, handedness)
+        if is_thumbs_up:
+            hand_count = 1
+            if len(results.multi_hand_landmarks) > 1:
+                hand2 = results.multi_hand_landmarks[1]
+                handedness2 = "Left" 
+                if results.multi_handedness and len(results.multi_handedness) > 1:
+                     handedness2 = results.multi_handedness[1].classification[0].label
+                
+                is_thumbs_up2, _ = self.detect_thumbs_up(hand2, handedness2)
+                if is_thumbs_up2:
+                    hand_count = 2
+
+            return GestureResult(
+                gesture_type=GestureType.THUMBS_UP,
+                confidence=thumbs_conf,
+                is_stable=True,
+                hand_count=hand_count
+            )
         
         # Count fingers
         finger_count = self.count_fingers(hand_landmarks, handedness)
@@ -476,36 +461,87 @@ class AlarmProcessor(VideoProcessorBase):
         
         is_stable = self.gesture_stable_count >= CONFIG.get("PERSIST_FRAMES", 3)
         
-        # Check for thumbs up
-        is_thumbs_up, thumbs_conf = self.detect_thumbs_up(hand_landmarks, handedness)
-        if is_thumbs_up and thumbs_conf >= 0.75:
-            return GestureResult(
-                gesture_type=GestureType.THUMBS_UP,
-                confidence=thumbs_conf,
-                is_stable=is_stable
-            )
-        
-        # Check for fist
-        if self.detect_fist(hand_landmarks):
-            return GestureResult(
-                gesture_type=GestureType.FIST,
-                finger_count=0,
-                confidence=0.9,
-                is_stable=is_stable
-            )
-        
-        # Check for swipe (when palm is open)
-        if smoothed_count == 5 and self.pending_modifier:
-            swipe = self.detect_swipe()
-            if swipe:
-                self.pending_modifier = False
-                self.centroid_history.clear()
+        # Handle 5-finger gesture - randomize between valid digits 5-9
+        if smoothed_count == 5:
+            if self.five_finger_start_time is None:
+                self.five_finger_start_time = current_time
+            
+            # Determine valid digits in range 5-9 for current state
+            valid_digits = [d for d in [5, 6, 7, 8, 9] if self.is_valid_digit(d)]
+            
+            if not valid_digits:
+                # No valid digits in 5-9 range, just show 5 as feedback
                 return GestureResult(
-                    gesture_type=swipe,
+                    gesture_type=GestureType.FINGER_COUNT,
                     finger_count=5,
                     confidence=0.85,
-                    is_stable=True
+                    is_stable=is_stable
                 )
+            elif valid_digits == [5]:
+                # Only 5 is valid (e.g., SET_MIN_TENS) - no randomization needed
+                self.current_roulette_digit = 5
+                return GestureResult(
+                    gesture_type=GestureType.FINGER_COUNT,
+                    finger_count=5,
+                    confidence=0.85,
+                    is_stable=is_stable
+                )
+            else:
+                # Multiple valid digits - randomize between them
+                # Update roulette every 0.15 seconds
+                if current_time - self.roulette_last_change > 0.15:
+                    self.current_roulette_digit = random.choice(valid_digits)
+                    self.roulette_last_change = current_time
+                
+                # Ensure we have a value (first run)
+                if self.current_roulette_digit is None or self.current_roulette_digit not in valid_digits:
+                    self.current_roulette_digit = random.choice(valid_digits)
+                
+                proposed_digit = self.current_roulette_digit
+                
+                # Map digit to gesture type for visual feedback
+                if proposed_digit == 5:
+                    proposed_gesture_type = GestureType.FINGER_COUNT
+                elif proposed_digit == 6:
+                    proposed_gesture_type = GestureType.SWIPE_UP
+                elif proposed_digit == 7:
+                    proposed_gesture_type = GestureType.SWIPE_RIGHT
+                elif proposed_digit == 8:
+                    proposed_gesture_type = GestureType.SWIPE_LEFT
+                else:
+                    proposed_gesture_type = GestureType.SWIPE_DOWN
+                
+                return GestureResult(
+                    gesture_type=proposed_gesture_type,
+                    finger_count=proposed_digit if proposed_digit == 5 else 5,
+                    confidence=0.85,
+                    is_stable=is_stable
+                )
+            
+        # Detect Release (Transition from 5 -> not 5)
+        elif self.five_finger_start_time is not None:
+            # User just released 5 fingers
+            duration = current_time - self.five_finger_start_time
+            self.five_finger_start_time = None
+            
+            # Commit based on duration
+            digit = None
+            if 2.0 <= duration < 3.0:
+                digit = 5
+            elif duration >= 3.0:
+                # Commit the current random digit shown on screen
+                # If user released while seeing "7", they get "7"
+                digit = self.current_roulette_digit
+                
+            # Clear roulette state
+            self.current_roulette_digit = None
+                
+            if digit is not None:
+                # CRITICAL Fix: Enforce validation on release commit too!
+                if self.is_valid_digit(digit):
+                    self.commit_digit(digit)
+                # Return NONE this frame to clear state
+                return GestureResult(gesture_type=GestureType.NONE)
         
         # Start modifier window for 5 fingers
         if smoothed_count == 5:
@@ -516,12 +552,34 @@ class AlarmProcessor(VideoProcessorBase):
             self.open_palm_start = None
             self.pending_modifier = False
         
-        # Return finger count
+        # Check second hand for match (for "Double" challenges) and Mixes
+        hand_count_match = 1
+        conf_boost = 0.0
+        all_counts = [int(smoothed_count)] # Primary is smoothed
+        
+        if len(results.multi_hand_landmarks) > 1:
+            hand2 = results.multi_hand_landmarks[1]
+            handedness2 = "Left" # default
+            if results.multi_handedness and len(results.multi_handedness) > 1:
+                 handedness2 = results.multi_handedness[1].classification[0].label
+            
+            count2 = self.count_fingers(hand2, handedness2)
+            all_counts.append(count2)
+            
+            if count2 == smoothed_count:
+                hand_count_match = 2
+                conf_boost = 0.1
+
+        # Return finger count or FIST
+        final_type = GestureType.FIST if smoothed_count == 0 else GestureType.FINGER_COUNT
+        
         return GestureResult(
-            gesture_type=GestureType.FINGER_COUNT,
+            gesture_type=final_type,
             finger_count=smoothed_count,
-            confidence=0.85 if is_stable else 0.6,
-            is_stable=is_stable
+            confidence=(0.85 if is_stable else 0.6) + conf_boost,
+            is_stable=is_stable,
+            hand_count=hand_count_match,
+            hand_counts=sorted(all_counts)
         )
     
     # =========================================================================
@@ -597,9 +655,72 @@ class AlarmProcessor(VideoProcessorBase):
     def _trigger_alarm(self):
         """Called when alarm timer fires"""
         self.is_ringing = True
+        self.is_ringing = True
         self.state = State.ALARM_RINGING
         self._log_event("ALARM_RING")
+        
+        # Generate annoying stop challenge
+        # Generate annoying stop challenge (Single vs Double Hand variations)
+        base_challenges = [
+            {"type": GestureType.TWO_HANDS_OPEN, "count": 0, "name": "SURRENDER (Open Hands)", "hands": 2},
+            {"type": GestureType.THUMBS_UP, "count": 0, "name": "THUMBS UP", "hands": 1},
+            {"type": GestureType.THUMBS_UP, "count": 0, "name": "DOUBLE THUMBS UP", "hands": 2},
+            {"type": GestureType.FIST, "count": 0, "name": "FIST", "hands": 1},
+            {"type": GestureType.FIST, "count": 0, "name": "DOUBLE FIST", "hands": 2},
+            {"type": GestureType.FINGER_COUNT, "count": 1, "name": "ONE FINGER", "hands": 1},
+            {"type": GestureType.FINGER_COUNT, "count": 1, "name": "DOUBLE ONE FINGER", "hands": 2},
+            {"type": GestureType.FINGER_COUNT, "count": 2, "name": "PEACE SIGN", "hands": 1},
+            {"type": GestureType.FINGER_COUNT, "count": 2, "name": "DOUBLE PEACE SIGN", "hands": 2},
+            {"type": GestureType.FINGER_COUNT, "count": 3, "name": "3 FINGERS", "hands": 1},
+            {"type": GestureType.FINGER_COUNT, "count": 3, "name": "DOUBLE 3 FINGERS", "hands": 2},
+            {"type": GestureType.FINGER_COUNT, "count": 4, "name": "4 FINGERS", "hands": 1},
+            {"type": GestureType.FINGER_COUNT, "count": 4, "name": "DOUBLE 4 FINGERS", "hands": 2},
+            {"type": GestureType.FINGER_COUNT, "count": 5, "name": "HIGH FIVE", "hands": 1},
+            {"type": GestureType.FINGER_COUNT, "count": 5, "name": "DOUBLE HIGH FIVE", "hands": 2},
+            # Mixed Challenges
+            {"type": GestureType.FINGER_COUNT, "count": 99, "name": "2 and 3 FINGERS", "hands": 2, "required_counts": [2, 3]},
+            {"type": GestureType.FINGER_COUNT, "count": 99, "name": "1 and 5 FINGERS", "hands": 2, "required_counts": [1, 5]},
+            {"type": GestureType.FINGER_COUNT, "count": 99, "name": "4 and 0 (Fist)", "hands": 2, "required_counts": [0, 4]},
+            {"type": GestureType.FINGER_COUNT, "count": 99, "name": "PEACE and OK (3)", "hands": 2, "required_counts": [2, 3]}, # Duplicate visual but diff text
+        ]
+        
+        chosen = random.choice(base_challenges)
+        duration = random.uniform(8.0, 12.0) # Users requested ~10s
+        
+        text = chosen["name"]
+        if chosen["hands"] == 2 and "and" not in text and "DOUBLE" not in text: # Don't double-label
+             text += " (BOTH HANDS!)"
+        elif chosen["hands"] == 1 and "(One Hand)" not in text:
+             text += " (One Hand)"
+            
+        self.stop_challenge = {
+            "type": chosen["type"],
+            "count": chosen["count"],
+            "text": text,
+            "duration": duration,
+            "hands": chosen["hands"],
+            "required_counts": chosen.get("required_counts")
+        }
+        self._log_event("CHALLENGE_SET", challenge=self.stop_challenge)
+        
+        # Start annoying audio in background thread
+        if dev_state.state.annoying_sound_enabled:
+             threading.Thread(target=self._play_alarm_sound, daemon=True).start()
     
+    def _play_alarm_sound(self):
+        """Play annoying beep sequence while ringing"""
+        freqs = [2000, 4000, 1500, 3000, 500, 5000] # Annoying frequencies
+        idx = 0
+        while self.is_ringing:
+            try:
+                # Beep blocks execution, so this thread stays alive
+                winsound.Beep(freqs[idx % len(freqs)], 300)
+                idx += 1
+                time.sleep(0.1) # Small gap between beeps
+            except Exception as e:
+                logger.error(f"Audio error: {e}")
+                break
+
     def stop_alarm(self):
         """Stop the ringing alarm"""
         self.is_ringing = False
@@ -659,14 +780,48 @@ class AlarmProcessor(VideoProcessorBase):
         
         # Handle ringing state
         if self.state == State.ALARM_RINGING:
-            if gesture.gesture_type == GestureType.TWO_HANDS_OPEN:
+            # Default challenge (Two hands) if none set (legacy safety)
+            target_type = GestureType.TWO_HANDS_OPEN
+            target_count = 0
+            target_dur = 2.0
+            target_hands = 2
+            
+            if self.stop_challenge:
+                target_type = self.stop_challenge["type"]
+                target_count = self.stop_challenge["count"]
+                target_dur = self.stop_challenge["duration"]
+                target_hands = self.stop_challenge.get("hands", 1)
+                required_counts = self.stop_challenge.get("required_counts")
+            else:
+                 required_counts = None
+            
+            # Check match
+            matches = False
+            
+            # 1. Mixed Gestures Logic
+            if required_counts:
+                 # Check if detected hand counts match required counts (sorted comparison)
+                 if gesture.hand_counts and sorted(gesture.hand_counts) == sorted(required_counts):
+                     matches = True
+            
+            # 2. Standard Logic
+            elif gesture.gesture_type == target_type:
+                # Check hand count requirements
+                if gesture.hand_count >= target_hands:
+                    if target_type == GestureType.FINGER_COUNT:
+                        if gesture.finger_count == target_count:
+                            matches = True
+                    else:
+                        matches = True
+            
+            if matches:
                 if self.hold_start_time is None:
                     self.hold_start_time = current_time
                 
                 hold_duration = current_time - self.hold_start_time
-                self.hold_progress = hold_duration / CONFIG.get("HOLD_CONFIRM_SEC", 0.8)
+                self.hold_progress = hold_duration / target_dur
                 
-                if hold_duration >= CONFIG.get("HOLD_CONFIRM_SEC", 0.8):
+                if hold_duration >= target_dur:
                     self.stop_alarm()
                     self.hold_start_time = None
                     self.hold_progress = 0
@@ -726,9 +881,11 @@ class AlarmProcessor(VideoProcessorBase):
                 
                 # Complete hold
                 if hold_duration >= CONFIG.get("HOLD_SEC", 2.0):
-                    self.commit_digit(digit)
-                    self.hold_start_time = None
-                    self.hold_progress = 0
+                    # For digit 5, we commit on RELEASE only (to allow 6-9 selection)
+                    if digit < 5:
+                        self.commit_digit(digit)
+                        self.hold_start_time = None
+                        self.hold_progress = 0
             else:
                 self.hold_start_time = None
                 self.hold_progress = 0
@@ -816,16 +973,24 @@ class AlarmProcessor(VideoProcessorBase):
         
         cv2.rectangle(frame, (bar_x1, bar_y1), (bar_x2, bar_y2), (255, 255, 255), 2)
         
-        # Draw hold percentage
-        pct_text = f"{int(self.hold_progress * 100)}%"
-        cv2.putText(
-            frame, pct_text,
-            (bar_x2 + 10, bar_y2),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (255, 255, 255),
-            2
-        )
+        # Draw hold progress (seconds)
+        if self.hold_progress > 0:
+            # Assume 2.0s hold for digits (most common case for progress bar visualization)
+            # or 0.8s for confirm. Since bar fills up based on progress, we can just show progress * target
+            
+            # Heuristic: if state is CONFIRM or RINGING, it's 0.8s. Else 2.0s.
+            target_sec = CONFIG.get("HOLD_CONFIRM_SEC", 0.8) if self.state in [State.CONFIRM, State.ALARM_RINGING] else CONFIG.get("HOLD_SEC", 2.0)
+            elapsed_sec = self.hold_progress * target_sec
+            
+            pct_text = f"{elapsed_sec:.1f}s"
+            cv2.putText(
+                frame, pct_text,
+                (bar_x2 + 10, bar_y2),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (255, 255, 255),
+                2
+            )
         
         # Draw glitch overlay (bottom-right)
         if self.glitch_active:
@@ -937,9 +1102,13 @@ class AlarmProcessor(VideoProcessorBase):
         )
         
         # Instructions
+        text = "Show BOTH hands open to stop"
+        if self.stop_challenge:
+            text = self.stop_challenge["text"]
+            
         cv2.putText(
-            frame, "Show BOTH hands open to stop",
-            (w // 2 - 180, h // 2 + 60),
+            frame, text,
+            (w // 2 - 200, h // 2 + 60),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (255, 255, 0),
@@ -993,6 +1162,21 @@ class AlarmProcessor(VideoProcessorBase):
         Process each video frame.
         """
         try:
+            # Check for Dev Mode commands
+            pending_alarm = dev_state.state.get_pending_alarm()
+            if pending_alarm:
+                 self.alarm_time.hour_tens = pending_alarm.hour // 10
+                 self.alarm_time.hour_ones = pending_alarm.hour % 10
+                 self.alarm_time.min_tens = pending_alarm.minute // 10
+                 self.alarm_time.min_ones = pending_alarm.minute % 10
+                 
+                 # Go straight to set
+                 self.schedule_alarm()
+                 self.state = State.ALARM_SET
+                 
+            if dev_state.state.check_trigger_ring():
+                self._trigger_alarm()
+
             # Track frame timing
             current_time = time.time()
             self.frame_times.append(current_time)

@@ -11,6 +11,11 @@ import os
 
 # Import the video processor
 from video_processor import AlarmProcessor
+import dev_state
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 # =============================================================================
 # PAGE CONFIG
@@ -117,18 +122,17 @@ with st.expander("📖 How to Suffer (Instructions)", expanded=False):
         ### Higher Digits (6-9)
         | Gesture | Digit |
         |---------|-------|
-        | 5 + Swipe UP | 6 |
-        | 5 + Swipe RIGHT | 7 |
-        | 5 + Swipe LEFT | 8 |
-        | 5 + Swipe DOWN | 9 |
+        | 🖐️ Hold 5 Fingers | 🎰 ROULETTE |
+        | (> 3 seconds) | Stops on random # |
+        | *Good luck timing it!* | *Ha ha ha* |
         """)
     
     st.markdown("""
     ---
     ### Controls
     - **👍 Thumbs Up** → Confirm alarm (hold 0.8s)
-    - **🙌 Two Hands Open** → Stop alarm (hold 0.8s)
-    - **Hold gestures for 2 FULL SECONDS** to register
+    - **🙌 Stop Alarm** → FOLLOW SCREEN INSTRUCTIONS!
+    - **(Challenges vary: One hand, two hands, specific fingers...)**
     - **10% chance of GLITCH** at 90% progress (start over!)
     """)
 
@@ -144,8 +148,8 @@ ctx = webrtc_streamer(
     video_processor_factory=AlarmProcessor,
     media_stream_constraints={
         "video": {
-            "width": {"ideal": 1280},
-            "height": {"ideal": 720},
+            "width": {"ideal": 640},
+            "height": {"ideal": 480},
             "frameRate": {"ideal": 30}
         },
         "audio": False
@@ -201,3 +205,33 @@ if os.environ.get("DEV_MODE", "false").lower() == "true":
     
     if st.sidebar.button("🔄 Reset State"):
         st.sidebar.success("State reset!")
+        
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Manual Override")
+    
+    # Manual Alarm Set
+    manual_time = st.sidebar.text_input("Set Alarm Time (HH:MM)", value="12:00")
+    if st.sidebar.button("⚡ Force Set Alarm"):
+        try:
+            from datetime import datetime
+            
+            # Parse HH:MM
+            h, m = map(int, manual_time.split(':'))
+            now = datetime.now()
+            target_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if target_time <= now:
+                from datetime import timedelta
+                target_time += timedelta(days=1)
+                
+            dev_state.state.set_alarm(target_time)
+            st.sidebar.success(f"Alarm set for {target_time.strftime('%H:%M')}")
+        except ValueError:
+            st.sidebar.error("Invalid format! Use HH:MM")
+            
+    # Force Ring
+    if st.sidebar.button("🔔 Force Ring (Annoying Audio)"):
+        dev_state.state.set_trigger_ring()
+        st.sidebar.warning("Triggering Alarm + Audio...")
+        
+    # Audio Toggle
+    dev_state.state.annoying_sound_enabled = st.sidebar.checkbox("Enable Annoying Sounds", value=True)
