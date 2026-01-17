@@ -35,6 +35,23 @@ If you fork this, note the following critical files for cloud compatibility:
 - **`.python-version`**: Pins Python to `3.11` (required for MediaPipe/Audio compatibility).
 - **`requirements.txt`**: Uses `opencv-python-headless` to avoid server crashes.
 
+### 🌐 TURN Server (Crucial for Cloud!)
+
+If the video stays on "Loading..." or errors out, you need a **TURN server** (to punch through firewalls).
+
+1.  Create a free account at [Metered.ca](https://www.metered.ca/).
+2.  Go to your Streamlit Cloud Dashboard → **Settings** → **Secrets**.
+3.  Add this config:
+
+```toml
+[ice_servers]
+urls = ["turn:global.relay.metered.ca:80"]
+username = "YOUR_METERED_USERNAME"
+credential = "YOUR_METERED_PASSWORD"
+```
+
+The app will automatically use these credentials!
+
 ## 📖 How to Suffer (User Guide)
 
 | Digit   | Gesture                                    |

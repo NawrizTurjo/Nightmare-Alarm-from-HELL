@@ -159,6 +159,15 @@ class AlarmAudioProcessor(AudioProcessorBase):
 # WebRTC streamer
 try:
     # WebRTC streamer
+    # Dynamic ICE config
+    ice_servers = [
+        {"urls": ["stun:stun.l.google.com:19302"]},
+    ]
+    
+    # Check for secrets
+    if "ice_servers" in st.secrets:
+        ice_servers = st.secrets["ice_servers"]
+        
     ctx = webrtc_streamer(
         key="alarm-processor",
         mode=WebRtcMode.SENDRECV,
@@ -174,13 +183,7 @@ try:
         },
         async_processing=True,  # Separate processing from UI thread
         rtc_configuration={
-            "iceServers": [
-                {"urls": ["stun:stun.l.google.com:19302"]},
-                {"urls": ["stun:stun1.l.google.com:19302"]},
-                {"urls": ["stun:stun2.l.google.com:19302"]},
-                {"urls": ["stun:stun3.l.google.com:19302"]},
-                {"urls": ["stun:stun4.l.google.com:19302"]},
-            ]
+            "iceServers": ice_servers
         }
     )
 except Exception as e:
