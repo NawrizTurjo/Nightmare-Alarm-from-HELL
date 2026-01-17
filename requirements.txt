@@ -19,3 +19,4 @@ flake8>=6.1.0
 # Utilities
 python-dotenv>=1.0.0
 pydub>=0.25.1
+pyaudioop; python_version >= "3.13"
