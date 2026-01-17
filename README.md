@@ -1,67 +1,63 @@
-# Finger Alarm Nightmare 🖐️⏰😱
+# Nightmare Alarm from HELL 🖐️⏰😱
 
-> **The Worst Alarm Clock UI** — A gesture-only alarm clock for the Worst UI Competition
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nightmare-alarm-from-hell.streamlit.app/)
 
-## What Is This?
+> **The Worst Alarm Clock UI** — A gesture-only alarm clock for the Worst UI Competition.
 
-An alarm clock that **hates you**. No buttons. No touchscreen. Just your webcam, your hands, and pure frustration.
+## 🔥 What Is This?
 
-- 🖐️ **Gesture-only control** — Set alarms by holding up fingers
-- ⏱️ **2-second holds** — Every digit requires a 2-second hold
-- 💥 **10% failure rate** — Inputs randomly fail at 90% progress
-- 🎨 **Chaotic UI** — Colors change, text jitters, nothing makes sense
+An alarm clock that **hates you**. No buttons. No touchscreen. Just your webcam, generic computer vision, and pure frustration.
 
-## Quick Start
+- 🖐️ **Gesture-only control** — Set alarms by holding up fingers (good luck).
+- ⏱️ **2-second holds** — Every digit requires a painful 2-second hold.
+- 💥 **10% failure rate** — Inputs randomly fail at 90% progress (it's a feature).
+- 🎨 **Chaotic UI** — Colors scream, text jitters, nothing makes sense.
+- 🚫 **No Stop Button** — To stop the alarm, you must perform a random "Challenge" (e.g., "Show 3 fingers with left hand and 2 with right").
+
+## 🚀 Quick Start
+
+### Local Run
 
 ```bash
-# Install dependencies
+# Mobile/Headless users: This needs a webcam!
 pip install -r requirements.txt
-
-# Run the app
 streamlit run app.py
 ```
 
 Open `http://localhost:8501` and allow camera access.
 
-## How to Set an Alarm
+## ☁️ Deployment (Streamlit Cloud)
 
-| Digit | Gesture                                 |
-| ----- | --------------------------------------- |
-| 0     | Fist (no fingers)                       |
-| 1-5   | Hold up that many fingers               |
-| 6-9   | **Hold 5 fingers > 3s** (Roulette Mode) |
+This app is optimized for **Streamlit Community Cloud**.
+If you fork this, note the following critical files for cloud compatibility:
 
-**Hold each gesture for 2 seconds** until the loading bar fills.
+- **`packages.txt`**: Installs system dependencies (`libgl1`) for OpenCV.
+- **`.python-version`**: Pins Python to `3.11` (required for MediaPipe/Audio compatibility).
+- **`requirements.txt`**: Uses `opencv-python-headless` to avoid server crashes.
 
-To **confirm**: Thumbs up 👍  
-To **stop alarm**: **Follow the on-screen challenge!**  
-(It requires random gestures: one hand, two hands, specific fingers, etc.)
+## 📖 How to Suffer (User Guide)
 
-## Tech Stack
+| Digit   | Gesture                                    |
+| ------- | ------------------------------------------ |
+| **0**   | ✊ Fist (no fingers)                       |
+| **1-5** | 🖐️ Hold up that many fingers               |
+| **6-9** | 🖐️ **Hold 5 fingers > 3s** (Roulette Mode) |
 
-- **Streamlit** + **streamlit-webrtc** — Real-time web video
-- **MediaPipe Hands** — Hand landmark detection
-- **OpenCV** — Frame processing and UI overlays
-- **Threading** — Non-blocking alarm scheduling
+1.  **Hold each gesture** until the loading bar fills.
+2.  **Confirm**: Thumbs up 👍 (Hold 0.8s).
+3.  **Stop Alarm**: **Read the screen!** It will demand a specific gesture (e.g., "Double High Five").
 
-## Docker
+## 🛠️ Tech Stack
 
-```bash
-docker build -t finger-alarm-nightmare .
-docker run -p 8501:8501 finger-alarm-nightmare
-```
-
-## Documentation
-
-- [FSM Specification](docs/fsm_spec.md) — State machine design
-- [Gesture Specification](docs/gesture_spec.md) — Gesture vocabulary
-- [UI Specification](docs/ui_spec.md) — Visual overlay details
-- [Safety Note](docs/safety_note.md) — Accessibility disclaimer
-- [Deployment Guide](docs/deploy.md) — Setup instructions
+- **Streamlit** + **WebRTC** — Real-time video processing in Python.
+- **MediaPipe Hands** — fast hand tracking.
+- **OpenCV** — Drawing the terrible UI on the video frames.
+- **PyDub** — For generating annoying audio.
 
 ## ⚠️ Disclaimer
 
-This is **intentionally terrible**. It's a satirical demonstration of hostile design for a competition. Don't use this as your actual alarm clock.
+This is **intentionally terrible**. It is a satirical demonstration of hostile design.
+**DO NOT** rely on this for important alarms. You have been warned.
 
 ---
 

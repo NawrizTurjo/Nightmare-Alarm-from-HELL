@@ -778,26 +778,29 @@ class AlarmProcessor(VideoProcessorBase):
     
     def _save_alarm(self):
         """Persist alarm to alarms.json"""
-        import uuid
-        alarm_data = {
-            "id": str(uuid.uuid4()),
-            "time_str": self.alarm_time.to_string(),
-            "timestamp": self.alarm_scheduled_time.timestamp() if self.alarm_scheduled_time else 0,
-            "created_at": time.time(),
-            "set_by": "gesture"
-        }
+        # Saving disabled per user request
+        return
         
-        alarms_path = Path(__file__).parent / "alarms.json"
-        try:
-            with open(alarms_path, 'r') as f:
-                alarms = json.load(f)
-        except:
-            alarms = []
-        
-        alarms.append(alarm_data)
-        
-        with open(alarms_path, 'w') as f:
-            json.dump(alarms, f, indent=2)
+        # import uuid
+        # alarm_data = {
+        #     "id": str(uuid.uuid4()),
+        #     "time_str": self.alarm_time.to_string(),
+        #     "timestamp": self.alarm_scheduled_time.timestamp() if self.alarm_scheduled_time else 0,
+        #     "created_at": time.time(),
+        #     "set_by": "gesture"
+        # }
+        # 
+        # alarms_path = Path(__file__).parent / "alarms.json"
+        # try:
+        #     with open(alarms_path, 'r') as f:
+        #         alarms = json.load(f)
+        # except:
+        #     alarms = []
+        # 
+        # alarms.append(alarm_data)
+        # 
+        # with open(alarms_path, 'w') as f:
+        #     json.dump(alarms, f, indent=2)
     
     def handle_fsm(self, gesture: GestureResult):
         """Main FSM update logic"""

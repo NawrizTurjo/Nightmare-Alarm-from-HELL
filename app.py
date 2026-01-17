@@ -215,9 +215,7 @@ with col3:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; opacity: 0.5; font-size: 12px;">
-    Built with 💢 for the Worst UI Competition | 
-    <a href="docs/safety_note.md">Safety Note</a> |
-    Press Ctrl+Shift+S for emergency stop (dev mode only)
+    Built with 💢 for the Worst UI Competition
 </div>
 """, unsafe_allow_html=True)
 
@@ -234,7 +232,8 @@ if True: # Always active but hidden
     if password:
         if password.strip().casefold() == ADMIN_PASSWORD.strip().casefold():
             st.sidebar.success("Wow! You are a brilliant! 🫨")
-            st.sidebar.subheader("🕵️ Cheater Menu")
+            st.sidebar.subheader("You are a cheater!")
+            st.sidebar.markdown("For full experience, please disable this mode 🙏")
             
             # --- ADMIN CONTROLS ---
             col1, col2 = st.sidebar.columns(2)
