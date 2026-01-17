@@ -15,5 +15,7 @@ pytest-cov>=4.1.0
 # Linting (dev)
 flake8>=6.1.0
 
+
 # Utilities
 python-dotenv>=1.0.0
+pydub>=0.25.1

@@ -11,8 +11,10 @@ class DevState:
         self.lock = threading.Lock()
         self.pending_alarm_time: Optional[datetime] = None
         self.trigger_ring: bool = False
-        self.stop_alarm: bool = False
+        self.stop_alarm: bool = False # Cheater mode flag
+        self.reset_requested: bool = False
         self.annoying_sound_enabled: bool = True
+        self.timezone_offset: float = 6.0 # Default UTC+6 (Dhaka)
 
     def set_alarm(self, dt: datetime):
         with self.lock:
@@ -39,3 +41,4 @@ class DevState:
 
 # Global instance
 state = DevState()
+global_audio_generator = None

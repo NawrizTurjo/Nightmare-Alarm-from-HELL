@@ -22,9 +22,12 @@ from enum import Enum, auto
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Dict
 from pathlib import Path
-from pathlib import Path
 import os
-import winsound
+try:
+    import winsound
+except ImportError:
+    winsound = None
+from audio_manager import AudioFrameGenerator
 import dev_state
 
 # MediaPipe imports - handle different versions
@@ -147,7 +150,11 @@ class AlarmTime:
             return None
         hour = self.hour_tens * 10 + self.hour_ones
         minute = self.min_tens * 10 + self.min_ones
-        now = datetime.now()
+        
+        # Use timezone aware "now"
+        offset = dev_state.state.timezone_offset
+        now = datetime.utcnow() + timedelta(hours=offset)
+        
         alarm_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         # If time has passed today, schedule for tomorrow
         if alarm_time <= now:
@@ -227,6 +234,14 @@ class AlarmProcessor(VideoProcessorBase):
         # Dev mode
         self.dev_mode = os.environ.get("DEV_MODE", "false").lower() == "true"
         
+        # Audio
+        # Use AudioFrameGenerator for WebRTC streaming
+        from audio_manager import AudioFrameGenerator
+        self.audio_manager = AudioFrameGenerator()
+        
+        # Share with global state so App can access it
+        dev_state.global_audio_generator = self.audio_manager
+        
         # Initialize logging
         self._init_logging()
     
@@ -248,7 +263,7 @@ class AlarmProcessor(VideoProcessorBase):
         }
         try:
             with open(self.log_file, 'a') as f:
-                f.write(json.dumps(entry) + '\n')
+                f.write(json.dumps(entry, default=str) + '\n')
         except Exception as e:
             logger.error(f"Failed to log event: {e}")
     
@@ -640,7 +655,11 @@ class AlarmProcessor(VideoProcessorBase):
             return
         
         self.alarm_scheduled_time = alarm_dt
-        delay = (alarm_dt - datetime.now()).total_seconds()
+        
+        # Calculate delay based on same timezone reference
+        offset = dev_state.state.timezone_offset
+        now = datetime.utcnow() + timedelta(hours=offset)
+        delay = (alarm_dt - now).total_seconds()
         
         if self.alarm_timer:
             self.alarm_timer.cancel()
@@ -705,6 +724,9 @@ class AlarmProcessor(VideoProcessorBase):
         
         # Start annoying audio in background thread
         if dev_state.state.annoying_sound_enabled:
+             # Start MP3 playback (non-blocking)
+             self.audio_manager.start_alarm()
+             # Also start thread for volume updates/fallback beeps if needed
              threading.Thread(target=self._play_alarm_sound, daemon=True).start()
     
     def _play_alarm_sound(self):
@@ -713,8 +735,19 @@ class AlarmProcessor(VideoProcessorBase):
         idx = 0
         while self.is_ringing:
             try:
-                # Beep blocks execution, so this thread stays alive
-                winsound.Beep(freqs[idx % len(freqs)], 300)
+                # Update volume
+                if hasattr(self.audio_manager, 'update_volume'):
+                    self.audio_manager.update_volume(0.4) # Approx dt
+                
+                # Logic: If AudioFrameGenerator is playing music, don't beep.
+                if not self.audio_manager.is_playing:
+                    # Beep blocks execution, so this thread stays alive
+                    if winsound:
+                        winsound.Beep(freqs[idx % len(freqs)], 300)
+                    else:
+                        # Linux/Cloud fallback - just sleep to emulate timing
+                        time.sleep(0.3)
+                    
                 idx += 1
                 time.sleep(0.1) # Small gap between beeps
             except Exception as e:
@@ -726,6 +759,8 @@ class AlarmProcessor(VideoProcessorBase):
         self.is_ringing = False
         self.state = State.ACK_RING
         self.alarm_time = AlarmTime()
+        
+        self.audio_manager.stop_alarm()
         
         if self.alarm_timer:
             self.alarm_timer.cancel()
@@ -766,6 +801,33 @@ class AlarmProcessor(VideoProcessorBase):
     
     def handle_fsm(self, gesture: GestureResult):
         """Main FSM update logic"""
+        # Check Force Stop (Cheater Mode)
+        if self.is_ringing and dev_state.state.stop_alarm:
+            self.stop_alarm()
+            dev_state.state.stop_alarm = False # Reset flag
+            self._log_event("FORCE_STOP_TRIGGERED")
+            return
+            
+        # Check Reset Request
+        if dev_state.state.reset_requested:
+            self.stop_alarm() # Ensure alarm is off
+            # Cancel timer if exists
+            if self.alarm_timer:
+                self.alarm_timer.cancel()
+                self.alarm_timer = None
+            
+            # Reset all state
+            self.state = State.IDLE
+            self.alarm_time = AlarmTime()
+            self.alarm_scheduled_time = None
+            self.current_roulette_digit = None
+            self.hold_start_time = None
+            self.hold_progress = 0
+            
+            dev_state.state.reset_requested = False
+            self._log_event("SYSTEM_RESET")
+            return
+
         current_time = time.time()
         
         # Handle hand lost

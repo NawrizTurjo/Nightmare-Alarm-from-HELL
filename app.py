@@ -11,6 +11,8 @@ import os
 
 # Import the video processor
 from video_processor import AlarmProcessor
+from audio_manager import AudioFrameGenerator
+from streamlit_webrtc import AudioProcessorBase
 import dev_state
 from dotenv import load_dotenv
 
@@ -141,18 +143,32 @@ st.markdown("---")
 # Main video stream
 st.markdown("### 📹 Gesture Detection Zone")
 
+# Audio Processor Class
+class AlarmAudioProcessor(AudioProcessorBase):
+    def __init__(self):
+        self.generator = dev_state.global_audio_generator
+
+    def recv(self, frame):
+        # We ignore input audio (mic) and return generated audio
+        # or silence if not ringing
+        new_frame = self.generator.get_next_frame()
+        if new_frame:
+            return new_frame
+        return frame # Fallback
+
 # WebRTC streamer
 ctx = webrtc_streamer(
     key="alarm-processor",
     mode=WebRtcMode.SENDRECV,
     video_processor_factory=AlarmProcessor,
+    audio_processor_factory=AlarmAudioProcessor,
     media_stream_constraints={
         "video": {
             "width": {"ideal": 640},
             "height": {"ideal": 480},
             "frameRate": {"ideal": 30}
         },
-        "audio": False
+        "audio": True
     },
     async_processing=True,  # Separate processing from UI thread
     rtc_configuration={
@@ -193,45 +209,59 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Dev mode indicator
-if os.environ.get("DEV_MODE", "false").lower() == "true":
-    st.sidebar.markdown("## 🔧 Dev Mode Active")
-    st.sidebar.markdown("- Ctrl+Shift+S: Emergency Stop")
-    st.sidebar.markdown("- Ctrl+Shift+R: Reset State")
-    st.sidebar.markdown("- Ctrl+Shift+D: Debug Overlay")
-    
-    if st.sidebar.button("🛑 Stop All Alarms"):
-        st.sidebar.success("Alarms stopped!")
-    
-    if st.sidebar.button("🔄 Reset State"):
-        st.sidebar.success("State reset!")
-        
+# Dev mode / Cheater Access
+if True: # Always active but hidden
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### Manual Override")
     
-    # Manual Alarm Set
-    manual_time = st.sidebar.text_input("Set Alarm Time (HH:MM)", value="12:00")
-    if st.sidebar.button("⚡ Force Set Alarm"):
-        try:
-            from datetime import datetime
+    # Password Protection
+    password = st.sidebar.text_input("Nice Try...ekhn password type koren 😈", type="password", key="cheater_pass")
+    
+    # Get password from env
+    ADMIN_PASSWORD = os.getenv("PASSWORD")
+    
+    if password:
+        if password.strip().casefold() == ADMIN_PASSWORD.strip().casefold():
+            st.sidebar.success("Wow! You are a brilliant! 🫨")
+            st.sidebar.subheader("🕵️ Cheater Menu")
             
-            # Parse HH:MM
-            h, m = map(int, manual_time.split(':'))
-            now = datetime.now()
-            target_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
-            if target_time <= now:
-                from datetime import timedelta
-                target_time += timedelta(days=1)
-                
-            dev_state.state.set_alarm(target_time)
-            st.sidebar.success(f"Alarm set for {target_time.strftime('%H:%M')}")
-        except ValueError:
-            st.sidebar.error("Invalid format! Use HH:MM")
+            # --- ADMIN CONTROLS ---
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                if st.button("🛑 STOP"):
+                    dev_state.state.stop_alarm = True
+                    st.sidebar.success("STOPPED")
+            with col2:        
+                if st.button("🔄 RESET"):
+                    dev_state.state.reset_requested = True
+                    st.sidebar.info("RESET REQUESTED")
             
-    # Force Ring
-    if st.sidebar.button("🔔 Force Ring (Annoying Audio)"):
-        dev_state.state.set_trigger_ring()
-        st.sidebar.warning("Triggering Alarm + Audio...")
-        
-    # Audio Toggle
-    dev_state.state.annoying_sound_enabled = st.sidebar.checkbox("Enable Annoying Sounds", value=True)
+            st.sidebar.markdown("---")
+            
+            # Manual Alarm Set
+            manual_time = st.sidebar.text_input("Set Alarm (HH:MM)", value="12:00")
+            if st.sidebar.button("⚡ Force Set"):
+                try:
+                    from datetime import datetime
+                    h, m = map(int, manual_time.split(':'))
+                    now = datetime.now()
+                    target_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                    if target_time <= now:
+                        from datetime import timedelta
+                        target_time += timedelta(days=1)
+                    dev_state.state.set_alarm(target_time)
+                    st.sidebar.success(f"Set: {target_time.strftime('%H:%M')}")
+                except ValueError:
+                    st.sidebar.error("Invalid format!")
+                    
+            # Force Ring
+            if st.sidebar.button("🔔 Force Ring"):
+                dev_state.state.set_trigger_ring()
+                st.sidebar.warning("Triggering...")
+
+            # Audio Toggle
+            dev_state.state.annoying_sound_enabled = st.sidebar.checkbox("Enable Sound", value=True)
+            
+            # Timezone Config
+            st.sidebar.caption("🕒 Timezone: UTC+6")
+        else:
+            st.sidebar.error("Hehe, nice try! 😒")
