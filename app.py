@@ -24,7 +24,7 @@ load_dotenv()
 # =============================================================================
 
 st.set_page_config(
-    page_title="Finger Alarm Nightmare",
+    page_title="Nightmare Alarm from HELL",
     page_icon="⏰",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -91,7 +91,7 @@ st.markdown(AUDIO_JS, unsafe_allow_html=True)
 
 # Title with maximum chaos
 st.markdown("""
-# 🖐️⏰ FINGER ALARM NIGHTMARE ⏰🖐️
+# 🖐️⏰ Nightmare Alarm from HELL ⏰🖐️
 ### *The alarm clock that HATES you*
 """)
 
@@ -157,30 +157,36 @@ class AlarmAudioProcessor(AudioProcessorBase):
         return frame # Fallback
 
 # WebRTC streamer
-ctx = webrtc_streamer(
-    key="alarm-processor",
-    mode=WebRtcMode.SENDRECV,
-    video_processor_factory=AlarmProcessor,
-    audio_processor_factory=AlarmAudioProcessor,
-    media_stream_constraints={
-        "video": {
-            "width": {"ideal": 640},
-            "height": {"ideal": 480},
-            "frameRate": {"ideal": 30}
+try:
+    # WebRTC streamer
+    ctx = webrtc_streamer(
+        key="alarm-processor",
+        mode=WebRtcMode.SENDRECV,
+        video_processor_factory=AlarmProcessor,
+        audio_processor_factory=AlarmAudioProcessor,
+        media_stream_constraints={
+            "video": {
+                "width": {"ideal": 640},
+                "height": {"ideal": 480},
+                "frameRate": {"ideal": 30}
+            },
+            "audio": True
         },
-        "audio": True
-    },
-    async_processing=True,  # Separate processing from UI thread
-    rtc_configuration={
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302"]},
-            {"urls": ["stun:stun1.l.google.com:19302"]},
-            {"urls": ["stun:stun2.l.google.com:19302"]},
-            {"urls": ["stun:stun3.l.google.com:19302"]},
-            {"urls": ["stun:stun4.l.google.com:19302"]},
-        ]
-    }
-)
+        async_processing=True,  # Separate processing from UI thread
+        rtc_configuration={
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {"urls": ["stun:stun1.l.google.com:19302"]},
+                {"urls": ["stun:stun2.l.google.com:19302"]},
+                {"urls": ["stun:stun3.l.google.com:19302"]},
+                {"urls": ["stun:stun4.l.google.com:19302"]},
+            ]
+        }
+    )
+except Exception as e:
+    st.error("WebRTC failed to initialize. Try refreshing or running locally.")
+    st.exception(e)
+    ctx = None
 
 # Status area
 st.markdown("---")
