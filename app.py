@@ -181,17 +181,32 @@ class AlarmAudioProcessor(AudioProcessorBase):
 try:
     # WebRTC streamer
     # Dynamic ICE config
-    ice_servers = [
-        {"urls": ["stun:stun.l.google.com:19302"]},
-    ]
-    
-    # Check for secrets
-    try:
-        if "ice_servers" in st.secrets:
-            ice_servers = st.secrets["ice_servers"]
-    except Exception:
-        # No secrets file found, use defaults
-        pass
+    def get_ice_servers():
+        # 1. Try fetching from Metered.ca API (Most Robust)
+        # Use the API key provided by the user
+
+        METERED_API_KEY = os.getenv("METERED_API_KEY")
+        try:
+            import requests
+            response = requests.get(f"https://streamlit-webrtc-alarm-hell.metered.live/api/v1/turn/credentials?apiKey={METERED_API_KEY}")
+            if response.status_code == 200:
+                return response.json()
+        except Exception as e:
+            # Fallback if API fails
+            print(f"Metered API failed: {e}")
+            pass
+
+        # 2. Check for secrets (User manual override)
+        try:
+            if "ice_servers" in st.secrets:
+                return st.secrets["ice_servers"]
+        except Exception:
+            pass
+            
+        # 3. Last Resort: Google STUN
+        return [{"urls": ["stun:stun.l.google.com:19302"]}]
+
+    ice_servers = get_ice_servers()
         
     ctx = webrtc_streamer(
         key="alarm-processor",
