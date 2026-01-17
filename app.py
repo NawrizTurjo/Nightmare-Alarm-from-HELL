@@ -180,33 +180,27 @@ class AlarmAudioProcessor(AudioProcessorBase):
 # WebRTC streamer
 try:
     # WebRTC streamer
-    # Dynamic ICE config
-    def get_ice_servers():
-        # 1. Try fetching from Metered.ca API (Most Robust)
-        # Use the API key provided by the user
-
-        METERED_API_KEY = os.getenv("METERED_API_KEY")
-        try:
-            import requests
-            response = requests.get(f"https://streamlit-webrtc-alarm-hell.metered.live/api/v1/turn/credentials?apiKey={METERED_API_KEY}")
-            if response.status_code == 200:
-                return response.json()
-        except Exception as e:
-            # Fallback if API fails
-            print(f"Metered API failed: {e}")
-            pass
-
-        # 2. Check for secrets (User manual override)
-        try:
-            if "ice_servers" in st.secrets:
-                return st.secrets["ice_servers"]
-        except Exception:
-            pass
-            
-        # 3. Last Resort: Google STUN
-        return [{"urls": ["stun:stun.l.google.com:19302"]}]
-
-    ice_servers = get_ice_servers()
+    # Fixed TURN Config (Hardcoded for stability)
+    rtc_config = {
+        "iceServers": [
+            {"urls": ["stun:stun.l.google.com:19302"]}, # Google STUN
+            {
+                "urls": ["turn:global.relay.metered.ca:80"], # TURN UDP
+                "username": "1c618a423b0c3b3a484962ea",
+                "credential": "Jad+W2yByVGB/KJf",
+            },
+            {
+                "urls": ["turn:global.relay.metered.ca:80?transport=tcp"], # TURN TCP
+                "username": "1c618a423b0c3b3a484962ea",
+                "credential": "Jad+W2yByVGB/KJf",
+            },
+            {
+                "urls": ["turn:global.relay.metered.ca:443"], # TURN SSL
+                "username": "1c618a423b0c3b3a484962ea",
+                "credential": "Jad+W2yByVGB/KJf",
+            }
+        ]
+    }
         
     ctx = webrtc_streamer(
         key="alarm-processor",
@@ -221,10 +215,8 @@ try:
             },
             "audio": True
         },
-        async_processing=True,  # Separate processing from UI thread
-        rtc_configuration={
-            "iceServers": ice_servers
-        }
+        async_processing=True,
+        rtc_configuration=rtc_config
     )
 except Exception as e:
     st.error("WebRTC failed to initialize. Try refreshing or running locally.")
