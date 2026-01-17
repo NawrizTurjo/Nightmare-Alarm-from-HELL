@@ -9,8 +9,29 @@ import streamlit as st
 from streamlit_webrtc import webrtc_streamer, WebRtcMode
 import os
 
+# Debug dependencies
+try:
+    import cv2
+except ImportError as e:
+    st.error(f"Failed to import cv2: {e}")
+    st.stop()
+
+try:
+    import av
+except ImportError as e:
+    st.error(f"Failed to import av: {e}")
+    st.stop()
+
 # Import the video processor
-from video_processor import AlarmProcessor
+try:
+    from video_processor import AlarmProcessor
+except Exception as e:
+    st.error(f"Failed to import video_processor: {e}")
+    # Force print traceback
+    import traceback
+    st.text(traceback.format_exc())
+    st.stop()
+    
 from audio_manager import AudioFrameGenerator
 from streamlit_webrtc import AudioProcessorBase
 import dev_state
@@ -165,8 +186,12 @@ try:
     ]
     
     # Check for secrets
-    if "ice_servers" in st.secrets:
-        ice_servers = st.secrets["ice_servers"]
+    try:
+        if "ice_servers" in st.secrets:
+            ice_servers = st.secrets["ice_servers"]
+    except Exception:
+        # No secrets file found, use defaults
+        pass
         
     ctx = webrtc_streamer(
         key="alarm-processor",
