@@ -2,6 +2,8 @@
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nightmare-alarm-from-hell.streamlit.app/)
 
+## 📺 [**WATCH THE DEMO VIDEO**](https://youtu.be/OeiVSV0C3ZI) 📺
+
 > **The Worst Alarm Clock UI** — A gesture-only alarm clock for the Worst UI Competition.
 
 ## 🔥 What Is This?
